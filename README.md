@@ -2,6 +2,11 @@
 
 A lightweight CLI tool that monitors Xfinity service status at a given address and alerts you to outages without manual checks. No API key required.
 
+[![Python](https://img.shields.io/badge/python-3.10+-blue)](https://www.python.org/)
+![Platform](https://img.shields.io/badge/platform-linux%20%7C%20windows%20%7C%20mac-lightgrey)
+[![Playwright](https://img.shields.io/badge/playwright-automated-green)](https://playwright.dev/python/)
+
+
 ## Requirements
 
 - Python 3.10+
