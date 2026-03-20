@@ -28,7 +28,7 @@ async def addr_to_conf(address: str) -> str:
             config.read("config.ini")
             
             #Set up and write to config
-            config["Settings"] = {"address": address}
+            config["Settings"]["address"] = address
 
             with open("config.ini", "w") as configfile:
                 config.write(configfile)
@@ -50,7 +50,13 @@ async def loading(default_message="Loading, please wait"):
 
 #Get current status from Xfinity
 async def current_status(page: Page) -> str:
-    return 0
+    try:
+        #Strip page status
+        return await page.locator("prism-text[display='heading3']").first.inner_text()
+
+    except Exception as e:
+        print(f"Status error: {e}")
+        sys.exit(1)
 
 #Enter address
 async def enter_addr(page: Page, address: str):
@@ -80,9 +86,12 @@ async def enter_addr(page: Page, address: str):
             await load_ani
         except asyncio.CancelledError:
             pass
-
-        #Confirm that address on page is correct, write to config
-        await addr_to_conf(resolved)
+        
+        config = configparser.ConfigParser()
+        config.read("config.ini")
+        if not config["Settings"]["address"]:
+            #Confirm that address on page is correct, write to config
+            await addr_to_conf(resolved)
 
         #Select first address on page
         await page.get_by_test_id("serviceAddress0").click()
@@ -107,17 +116,59 @@ async def open_browser(address: str):
         except asyncio.CancelledError:
             pass
         
-        #Attempt to enter the address on the page after waiting for it to fully load
-        await page.wait_for_load_state("load")
-        await enter_addr(page, address)
+        #Control flow set up so keyboard interrupt happens cleanly
+        try:
+            while True:
+                #Attempt to enter the address on the page after waiting for it to fully load
+                await page.wait_for_load_state("load")
+                await enter_addr(page, address)
 
-        await browser.close()
+                #Get current status from status page
+                status = await current_status(page)
+                print("\n"+ status)
+
+                #Reload and try again after wait
+                config = configparser.ConfigParser()
+                config.read("config.ini")
+                sleep_time = int(config["Settings"]["sleep"])
+                await asyncio.sleep(sleep_time)
+                await page.reload()
+
+        except KeyboardInterrupt:
+            pass
+        
+        except Exception as e:
+            await browser.close()
+            print(f"Flow error: {e}")
+            sys.exit(1)
+
+        finally:
+            print("Program closing, please wait...") 
+            await browser.close()
 
 if __name__ == "__main__":
 
-    #Get service address for business and perform initial validation
-    serv_addr = input("What is the service address for the business, including the zip code: ").strip()
-    returned_valid = validate_addr(serv_addr)
+    #Go through onboarding steps if they didn't happen already
+    if not os.path.exists("config.ini"):
+
+        #Initialize config file structure
+        config = configparser.ConfigParser()
+        config['Settings'] = {
+            'address': '',
+            'sleep': '60' #Sleep for 30 minutes (1800) by default (add this after testing)
+        }
+        with open('config.ini', 'w') as configfile:
+            config.write(configfile)
+
+        #Get service address for business and perform initial validation
+        serv_addr = input("What is the service address for the business, including the zip code: ").strip()
+        returned_valid = validate_addr(serv_addr)
+
+    #Read already created config file
+    else:
+        config = configparser.ConfigParser()
+        config.read("config.ini")
+        serv_addr = config["Settings"]["address"]    
 
     #Open a headless web browser
     asyncio.run(open_browser(serv_addr))
