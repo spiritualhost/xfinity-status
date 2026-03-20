@@ -115,36 +115,43 @@ async def open_browser(address: str):
             await load_ani
         except asyncio.CancelledError:
             pass
-        
+                
         #Control flow set up so keyboard interrupt happens cleanly
         try:
             while True:
                 #Attempt to enter the address on the page after waiting for it to fully load
                 await page.wait_for_load_state("load")
                 await enter_addr(page, address)
-
+                
                 #Get current status from status page
                 status = await current_status(page)
-                print("\n"+ status)
+                print(f"\n{status}")
 
                 #Reload and try again after wait
                 config = configparser.ConfigParser()
                 config.read("config.ini")
                 sleep_time = int(config["Settings"]["sleep"])
+                load_ani = asyncio.create_task(loading(f"Waiting {sleep_time} seconds until the next check, please wait..."))
                 await asyncio.sleep(sleep_time)
-                await page.reload()
+                load_ani.cancel()
 
-        except KeyboardInterrupt:
-            pass
+                #Clean up task
+                try:
+                   await load_ani
+                except asyncio.CancelledError:
+                    pass
+
+                await page.reload()
         
         except Exception as e:
-            await browser.close()
             print(f"Flow error: {e}")
-            sys.exit(1)
 
         finally:
-            print("Program closing, please wait...") 
-            await browser.close()
+            try:
+                print("\nProgram closing, please wait...") 
+                await browser.close()
+            except Exception:
+                pass
 
 if __name__ == "__main__":
 
@@ -171,4 +178,7 @@ if __name__ == "__main__":
         serv_addr = config["Settings"]["address"]    
 
     #Open a headless web browser
-    asyncio.run(open_browser(serv_addr))
+    try:
+        asyncio.run(open_browser(serv_addr))
+    except KeyboardInterrupt:
+        pass
