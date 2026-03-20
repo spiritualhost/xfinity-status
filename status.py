@@ -1,7 +1,7 @@
 #Get the status for xfinity service at your address without manual checks
 
 #Import configparser for user-specified information
-import configparser, usaddress, os, asyncio, sys
+import configparser, usaddress, os, asyncio, sys, questionary
 from playwright.async_api import async_playwright, Page
 
 #Does the address appear to be legitimate (pre-check)
@@ -41,14 +41,11 @@ async def enter_addr(page: Page, address: str):
         #Wait for combobox to load fully, click into it, then enter input service address as a string
         await page.wait_for_selector('[role="combobox"]')
         await page.get_by_role('combobox', name="Enter service address").click()
-        #await page.keyboard.type(address, delay=300)
         await page.keyboard.insert_text(address)
 
         #Simulate human typing so autocomplete dropdown appears
         await page.keyboard.press("Space")
         await page.keyboard.press("Backspace")
-
-
 
         #Wait for suggested addresses
         await page.wait_for_selector('#typeaheadResults')
@@ -59,8 +56,6 @@ async def enter_addr(page: Page, address: str):
 
         #Select first address on page
         await page.get_by_test_id("serviceAddress0").click()
-
-
 
     except Exception as e:
         print(f"Error on address entry: {e}")
@@ -75,7 +70,6 @@ async def enter_addr(page: Page, address: str):
             await load_ani
         except asyncio.CancelledError:
             pass
-
 
 #Asynchronously open the web browser
 async def open_browser(address: str):
