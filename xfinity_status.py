@@ -1,7 +1,7 @@
 #Get the status for xfinity service at your address without manual checks
 
 #Import configparser for user-specified information
-import configparser, usaddress, os, asyncio, sys, questionary
+import configparser, usaddress, os, asyncio, sys, questionary, logging
 from playwright.async_api import async_playwright, Page
 
 #Does the address appear to be legitimate (pre-check)
@@ -14,39 +14,44 @@ def validate_addr(address: str) -> tuple:
 
     #Most likely a RepeatedLabelError for ambiguous address structure
     except Exception as e:
-        print(f"Invalid address error: {e}")
+        logging.info(f"Invalid address error: {e}")
         sys.exit(1)
 
 #Write the address to the config file
 async def addr_to_conf(address: str) -> str:
-    if not await questionary.confirm(f"\nConfirm the address returned by the Xfinity portal is valid: {address} (y/n)").ask_async():
-        print("Error: please retry address entry.")
-        sys.exit()
-    else:
-        try:
-            config = configparser.ConfigParser()
-            config.read("config.ini")
-            
-            #Set up and write to config
-            config["Settings"]["address"] = address
-
-            with open("config.ini", "w") as configfile:
-                config.write(configfile)
-            
-            print(f"Address {address} written to config successfully.")
-
-        except Exception as e:
-            print(f"Config error: {e}")
+    if sys.stdout.isatty():
+        if not await questionary.confirm(f"\nConfirm the address returned by the Xfinity portal is valid: {address} (y/n)").ask_async():
+            logging.info("Error: please retry address entry.")
             sys.exit(1)
+    else:
+        logging.info(f"Non-interactive mode, auto accepting resolved address {address}")
+
+    try:
+        config = configparser.ConfigParser()
+        config.read("config.ini")
+        
+        #Set up and write to config
+        config["Settings"]["address"] = address
+
+        with open("config.ini", "w") as configfile:
+            config.write(configfile)
+        
+        logging.info(f"Address {address} written to config successfully.")
+
+    except Exception as e:
+        logging.info(f"Config error: {e}")
+        sys.exit(1)
 
 #Loading animation
 async def loading(default_message="Loading, please wait"):
-    chars = ['⣾', '⣷', '⣯', '⣟', '⡿', '⢿', '⣻', '⣽']
-    while True:
-        for i in chars:
-            sys.stdout.write(f"\r{default_message} {i}")
-            sys.stdout.flush()
-            await asyncio.sleep(.1)
+    #Skip animation if not in terminal
+    if sys.stdout.isatty():
+        chars = ['⣾', '⣷', '⣯', '⣟', '⡿', '⢿', '⣻', '⣽']
+        while True:
+            for i in chars:
+                sys.stdout.write(f"\r{default_message} {i}")
+                sys.stdout.flush()
+                await asyncio.sleep(.1)
 
 #Get current status from Xfinity
 async def current_status(page: Page) -> str:
@@ -55,7 +60,7 @@ async def current_status(page: Page) -> str:
         return await page.locator("prism-text[display='heading3']").first.inner_text()
 
     except Exception as e:
-        print(f"Status error: {e}")
+        logging.info(f"Status error: {e}")
         sys.exit(1)
 
 #Enter address
@@ -90,6 +95,9 @@ async def enter_addr(page: Page, address: str):
         config = configparser.ConfigParser()
         config.read("config.ini")
         if not config["Settings"]["address"]:
+            if not sys.stdin.isatty():
+                logging.info("No address in config. Run interactively first or add address manually to config file.")
+                sys.exit(1)
             #Confirm that address on page is correct, write to config
             await addr_to_conf(resolved)
 
@@ -97,13 +105,13 @@ async def enter_addr(page: Page, address: str):
         await page.get_by_test_id("serviceAddress0").click()
 
     except Exception as e:
-        print(f"Error on address entry: {e}")
+        logging.info(f"Error on address entry: {e}")
         sys.exit(1)
 
 #Asynchronously open the web browser
 async def open_browser(address: str):
     async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=False)
+        browser = await p.chromium.launch(headless=True)
         page = await browser.new_page()
         
         load_ani = asyncio.create_task(loading("Loading headless browser launch, please wait..."))
@@ -125,7 +133,7 @@ async def open_browser(address: str):
                 
                 #Get current status from status page
                 status = await current_status(page)
-                print(f"\n{status}")
+                logging.info(status)
 
                 #Reload and try again after wait
                 config = configparser.ConfigParser()
@@ -144,16 +152,24 @@ async def open_browser(address: str):
                 await page.reload()
         
         except Exception as e:
-            print(f"Flow error: {e}")
+            logging.info(f"Flow error: {e}")
 
         finally:
             try:
-                print("\nProgram closing, please wait...") 
+                logging.info("Program closing, please wait...") 
                 await browser.close()
             except Exception:
                 pass
 
 if __name__ == "__main__":
+
+    #Set up logging format
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+        stream=sys.stdout
+    )
 
     #Go through onboarding steps if they didn't happen already
     if not os.path.exists("config.ini"):
@@ -162,20 +178,30 @@ if __name__ == "__main__":
         config = configparser.ConfigParser()
         config['Settings'] = {
             'address': '',
-            'sleep': '60' #Sleep for 30 minutes (1800) by default (add this after testing)
+            'sleep': '1800' #Sleep for 30 minutes (1800) by default
         }
         with open('config.ini', 'w') as configfile:
             config.write(configfile)
 
+        #Additional non-interactivity check
+        if not sys.stdin.isatty():
+            logging.info("No address configured. Please run interactively to set up, or add your address manually to config.ini.")
+            sys.exit(1)
+
         #Get service address for business and perform initial validation
         serv_addr = input("What is the service address for the business, including the zip code: ").strip()
-        returned_valid = validate_addr(serv_addr)
+        if validate_addr(serv_addr) == 1:
+            logging.info("Address validation failed. Please enter a valid address.")
+            sys.exit(1)
 
     #Read already created config file
     else:
         config = configparser.ConfigParser()
         config.read("config.ini")
         serv_addr = config["Settings"]["address"]    
+        if not serv_addr:
+            logging.info("No address configured. Please run interactively to set up, or add your address manually to config.ini.")
+            sys.exit(1)
 
     #Open a headless web browser
     try:
