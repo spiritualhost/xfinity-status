@@ -2,6 +2,7 @@
 
 #Import configparser for user-specified information
 import configparser, usaddress, os, asyncio, sys, questionary, logging
+from datetime import datetime
 from playwright.async_api import async_playwright, Page
 
 #Does the address appear to be legitimate (pre-check)
@@ -133,7 +134,10 @@ async def open_browser(address: str):
                 
                 #Get current status from status page
                 status = await current_status(page)
-                logging.info(status)
+                if not sys.stdout.isatty(): #If non-interactive
+                    logging.info(status)
+                else:
+                    print(f"\n{datetime.now()} {status}")            
 
                 #Reload and try again after wait
                 config = configparser.ConfigParser()
